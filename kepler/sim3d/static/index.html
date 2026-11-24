@@ -232,12 +232,12 @@
     });
     const water = new THREE.Mesh(waterGeo, waterMat);
     water.rotation.x = -Math.PI / 2;
-    water.position.y = -0.5;
+    water.position.y = -2.5;
     scene.add(water);
 
     // Grid Floor
     const gridHelper = new THREE.GridHelper(1000, 50, 0x1e3a5f, 0x0a192f);
-    gridHelper.position.y = 0.0;
+    gridHelper.position.y = -2.5;
     scene.add(gridHelper);
 
     // Autonomous Spaceport Drone Ship (ASDS Landing Barge)
@@ -245,7 +245,7 @@
     const deckGeo = new THREE.BoxGeometry(60, 4, 100);
     const deckMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 });
     const deck = new THREE.Mesh(deckGeo, deckMat);
-    deck.position.y = 1.5;
+    deck.position.y = -2.0; // Top surface at y = 0.0
     deck.receiveShadow = true;
     bargeGroup.add(deck);
 
@@ -254,14 +254,14 @@
     const padOuterMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, side: THREE.DoubleSide });
     const padOuter = new THREE.Mesh(padOuterGeo, padOuterMat);
     padOuter.rotation.x = -Math.PI / 2;
-    padOuter.position.y = 3.55;
+    padOuter.position.y = 0.02;
     bargeGroup.add(padOuter);
 
     const padInnerGeo = new THREE.RingGeometry(2.8, 3.2, 32);
     const padInnerMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide });
     const padInner = new THREE.Mesh(padInnerGeo, padInnerMat);
     padInner.rotation.x = -Math.PI / 2;
-    padInner.position.y = 3.56;
+    padInner.position.y = 0.03;
     bargeGroup.add(padInner);
     scene.add(bargeGroup);
 
@@ -276,7 +276,7 @@
       metalness: 0.3
     });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 25.0; // Base at y=0, CM around y=20
+    body.position.y = 25.8; // Base at y=0.8, CM around y=20.8
     body.castShadow = true;
     rocketGroup.add(body);
 
@@ -284,7 +284,7 @@
     const interstageGeo = new THREE.CylinderGeometry(1.85, 1.85, 8, 32);
     const interstageMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
     const interstage = new THREE.Mesh(interstageGeo, interstageMat);
-    interstage.position.y = 44.0;
+    interstage.position.y = 44.8;
     rocketGroup.add(interstage);
 
     // Grid Fins (4 fins near top)
@@ -293,20 +293,20 @@
       const finMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 });
       const fin = new THREE.Mesh(finGeo, finMat);
       const angle = (i * Math.PI) / 2;
-      fin.position.set(Math.cos(angle) * 2.3, 44.0, Math.sin(angle) * 2.3);
+      fin.position.set(Math.cos(angle) * 2.3, 44.8, Math.sin(angle) * 2.3);
       fin.rotation.y = angle;
       rocketGroup.add(fin);
     }
 
-    // Engine Gimbal Pivot Group (at base y=0)
+    // Engine Gimbal Pivot Group (at base y=0.8)
     const engineGimbalGroup = new THREE.Group();
-    engineGimbalGroup.position.set(0, 0, 0);
+    engineGimbalGroup.position.set(0, 0.8, 0);
 
     // Engine Nozzle
-    const nozzleGeo = new THREE.ConeGeometry(1.2, 2.5, 24, 1, true);
+    const nozzleGeo = new THREE.ConeGeometry(1.0, 1.0, 24, 1, true);
     const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.6, metalness: 0.9 });
     const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
-    nozzle.position.y = -1.25;
+    nozzle.position.y = -0.5;
     nozzle.rotation.x = Math.PI; // Opening downwards
     engineGimbalGroup.add(nozzle);
 
@@ -319,7 +319,7 @@
       side: THREE.DoubleSide
     });
     const flame = new THREE.Mesh(flameGeo, flameMat);
-    flame.position.y = -8.5;
+    flame.position.y = -8.0;
     flame.rotation.x = Math.PI;
     engineGimbalGroup.add(flame);
 
@@ -327,7 +327,7 @@
     const coreFlameGeo = new THREE.ConeGeometry(0.5, 12, 16, 1, true);
     const coreFlameMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.0 });
     const coreFlame = new THREE.Mesh(coreFlameGeo, coreFlameMat);
-    coreFlame.position.y = -7.0;
+    coreFlame.position.y = -6.5;
     coreFlame.rotation.x = Math.PI;
     engineGimbalGroup.add(coreFlame);
 
@@ -338,18 +338,28 @@
     for (let i = 0; i < 4; i++) {
       const legGroup = new THREE.Group();
       const legAngle = (i * Math.PI) / 2;
-      legGroup.position.set(Math.cos(legAngle) * 1.83, 1.5, Math.sin(legAngle) * 1.83);
+      legGroup.position.set(Math.cos(legAngle) * 1.83, 3.8, Math.sin(legAngle) * 1.83);
       legGroup.rotation.y = legAngle;
 
-      const legBarGeo = new THREE.CylinderGeometry(0.12, 0.12, 8.0);
-      const legBarMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 });
+      const pivot = new THREE.Group();
+      legGroup.add(pivot);
+
+      const legBarGeo = new THREE.CylinderGeometry(0.12, 0.18, 5.0, 16);
+      const legBarMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.3 });
       const legBar = new THREE.Mesh(legBarGeo, legBarMat);
-      legBar.position.set(0, -3.8, 0);
-      legBar.rotation.x = 0.05; // Default retracted
-      legGroup.add(legBar);
+      legBar.position.set(0, -2.5, 0);
+      pivot.add(legBar);
+
+      const footGeo = new THREE.BoxGeometry(0.5, 0.1, 0.8);
+      const footMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9 });
+      const foot = new THREE.Mesh(footGeo, footMat);
+      foot.position.set(0, -5.0, 0);
+      pivot.add(foot);
+
+      pivot.rotation.x = 0.06; // Default retracted (hugging fuselage)
 
       rocketGroup.add(legGroup);
-      legs.push({ group: legGroup, bar: legBar });
+      legs.push({ pivot: pivot });
     }
 
     scene.add(rocketGroup);
@@ -394,14 +404,36 @@
 
       rocketGroup.position.set(posX, posY, posZ);
 
-      // Attitude: Quaternion [qw, qx, qy, qz]
-      // Map body Z (up in physics) to Three.js Y (up in Three.js)
-      // Kepler: q = [qw, qx, qy, qz]
-      // In Three.js: Rocket's long axis is +Y, while physics long axis is +Z
-      const q = new THREE.Quaternion(d.quat[1], d.quat[3], d.quat[2], d.quat[0]);
-      // Rotate by 90 deg around X to align physics +Z with Three.js +Y
-      const qAlign = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-      rocketGroup.quaternion.copy(q).multiply(qAlign);
+      // Attitude: Coordinate mapping from Kepler physics to Three.js
+      // Physics:  X = East, Y = North, Z = Up (booster centerline along +Z)
+      // Three.js: X = East, Y = Up,    Z = North (booster centerline along +Y)
+      const w = d.quat[0];
+      const x = d.quat[1];
+      const y = d.quat[2];
+      const z = d.quat[3];
+
+      // Physics rotation matrix Rp (body to world)
+      const r11 = 1 - 2 * (y * y + z * z);
+      const r12 = 2 * (x * y - z * w);
+      const r13 = 2 * (x * z + y * w);
+
+      const r21 = 2 * (x * y + z * w);
+      const r22 = 1 - 2 * (x * x + z * z);
+      const r23 = 2 * (y * z - x * w);
+
+      const r31 = 2 * (x * z - y * w);
+      const r32 = 2 * (y * z + x * w);
+      const r33 = 1 - 2 * (x * x + y * y);
+
+      // Similarity transformation Rt = P * Rp * P where P swaps axes 2 & 3:
+      const rotMat = new THREE.Matrix4();
+      rotMat.set(
+        r11, r13, r12, 0,
+        r31, r33, r32, 0,
+        r21, r23, r22, 0,
+        0,   0,   0,   1
+      );
+      rocketGroup.quaternion.setFromRotationMatrix(rotMat);
 
       // Engine Gimbal Deflection
       engineGimbalGroup.rotation.z = -THREE.MathUtils.degToRad(d.gimbal_deg[0]);
@@ -423,9 +455,9 @@
       // Landing Legs Deployment
       legs.forEach(leg => {
         if (d.legs_deployed) {
-          leg.bar.rotation.x = 0.75; // Deployed outwards
+          leg.pivot.rotation.x = 0.68; // Deployed outwards (foot touches deck at z=0)
         } else {
-          leg.bar.rotation.x = 0.05; // Retracted
+          leg.pivot.rotation.x = 0.06; // Retracted
         }
       });
 
