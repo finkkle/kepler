@@ -77,6 +77,7 @@ class SimulationSession:
         if s.ground_contact:
             return self.get_telemetry()
 
+        wind = self.dynamics.wind.get_wind(s.pos[2], dt=0.0)
         obs = np.array([
             s.pos[0] / 100.0,
             s.pos[1] / 100.0,
@@ -88,71 +89,50 @@ class SimulationSession:
             s.omega[0], s.omega[1], s.omega[2],
             s.tilt_rad,
             s.fuel_mass / max(1.0, self.init_fuel),
-            0.0, 0.0
+            wind[0] / 20.0, wind[1] / 20.0
         ], dtype=np.float32)
 
         if self.mode == "rl" and self.rl_agent is not None:
             action, _ = self.rl_agent.predict(obs, deterministic=True)
             a_th, a_tp, a_tr, a_rcs = action
-            throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
-
-            # Inner-loop TVC
-            euler = quat_to_euler(s.quat)
-            roll, pitch, yaw = euler
-            wx, wy, wz = s.omega
-            z_curr = max(0.0, s.pos[2])
-
-            max_tilt = np.radians(16.0)
-            near_ground = 1.0 if z_curr > 6.0 else max(0.0, z_curr / 6.0)
-            target_pitch = float(a_tp * max_tilt * near_ground)
-            target_roll = float(a_tr * max_tilt * near_ground)
-
-            kp_att = 4.2
-            kd_att = 2.4
-            gy_cmd = np.clip(kp_att * (pitch - target_pitch) + kd_att * wy, -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
-            gz_cmd = np.clip(-(kp_att * (roll - target_roll) + kd_att * wx), -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
-            rcs_cmd = float(a_rcs)
-
-            if z_curr <= 12.0 and s.vel[2] >= -0.85:
-                throttle_cmd = 0.0
-            elif z_curr <= 0.5 and -1.8 <= s.vel[2] <= 0.1:
-                throttle_cmd = 0.0
         elif self.mode == "autopilot":
             action = self.flight_computer.get_action(obs)
             a_th, a_tp, a_tr, a_rcs = action
-            throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
-
-            # Inner-loop TVC
-            euler = quat_to_euler(s.quat)
-            roll, pitch, yaw = euler
-            wx, wy, wz = s.omega
-            z_curr = max(0.0, s.pos[2])
-
-            max_tilt = np.radians(16.0)
-            near_ground = 1.0 if z_curr > 6.0 else max(0.0, z_curr / 6.0)
-            target_pitch = float(a_tp * max_tilt * near_ground)
-            target_roll = float(a_tr * max_tilt * near_ground)
-
-            kp_att = 4.2
-            kd_att = 2.4
-            gy_cmd = np.clip(kp_att * (pitch - target_pitch) + kd_att * wy, -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
-            gz_cmd = np.clip(-(kp_att * (roll - target_roll) + kd_att * wx), -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
-            rcs_cmd = float(a_rcs)
-
-            if z_curr <= 12.0 and s.vel[2] >= -0.85:
-                throttle_cmd = 0.0
-            elif z_curr <= 0.5 and -1.8 <= s.vel[2] <= 0.1:
-                throttle_cmd = 0.0
         elif self.mode == "manual":
+            action = None
             throttle_cmd = self.manual_throttle
             gy_cmd = self.manual_gimbal_y * self.cfg.max_gimbal_angle
             gz_cmd = self.manual_gimbal_z * self.cfg.max_gimbal_angle
             rcs_cmd = self.manual_rcs
         else:  # freefall
+            action = None
             throttle_cmd = 0.0
             gy_cmd = 0.0
             gz_cmd = 0.0
             rcs_cmd = 0.0
+
+        if self.mode in ["rl", "autopilot"] and action is not None:
+            throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
+
+            # Inner-loop TVC
+            euler = quat_to_euler(s.quat)
+            roll, pitch, yaw = euler
+            wx, wy, wz = s.omega
+            z_curr = max(0.0, s.pos[2])
+
+            max_tilt = np.radians(16.0)
+            near_ground = 1.0 if z_curr > 6.0 else max(0.0, z_curr / 6.0)
+            target_pitch = float(a_tp * max_tilt * near_ground)
+            target_roll = float(a_tr * max_tilt * near_ground)
+
+            kp_att = 4.2
+            kd_att = 2.4
+            gy_cmd = np.clip(kp_att * (pitch - target_pitch) + kd_att * wy, -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
+            gz_cmd = np.clip(-(kp_att * (roll - target_roll) + kd_att * wx), -self.cfg.max_gimbal_angle, self.cfg.max_gimbal_angle)
+            rcs_cmd = float(a_rcs)
+
+            if s.ground_contact or s.pos[2] <= 0.05:
+                throttle_cmd = 0.0
 
         self.dynamics.step(throttle_cmd, gy_cmd, gz_cmd, rcs_cmd)
         return self.get_telemetry()

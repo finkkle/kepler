@@ -42,6 +42,8 @@ def evaluate_kepler1(model_path: str = None, num_flights: int = 30):
             obs, r, term, trunc, info = env.step(action)
             steps += 1
             done = term or trunc
+            if done:
+                break
 
         pos = info["pos"]
         vel = info["vel"]

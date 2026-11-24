@@ -86,6 +86,8 @@ class KeplerLandingEnv(gym.Env):
         options: dict[str, Any] | None = None
     ) -> tuple[np.ndarray, dict[str, Any]]:
         super().reset(seed=seed)
+        if seed is not None:
+            np.random.seed(seed)
         self.step_count = 0
 
         # Curriculum / difficulty configuration
@@ -182,11 +184,8 @@ class KeplerLandingEnv(gym.Env):
         rcs_cmd = float(a_rcs)
 
         # Autonomous Touchdown Settle Logic:
-        # Since TWR > 1 at minimum throttle, when the booster has slowed to gentle descent (< 0.85 m/s)
-        # near ground (z <= 12m), engine cuts off so Earth gravity smoothly settles the rocket onto the landing legs
-        if z_curr <= 12.0 and s_prev.vel[2] >= -0.85:
-            throttle_cmd = 0.0
-        elif z_curr <= 0.5 and -1.8 <= s_prev.vel[2] <= 0.1:
+        # Cut off when landing legs make deck contact
+        if s_prev.ground_contact or s_prev.pos[2] <= 0.05:
             throttle_cmd = 0.0
 
         fuel_before = s_prev.fuel_mass
