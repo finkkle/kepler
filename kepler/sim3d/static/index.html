@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kepler // 3D Autonomous Rocket Sandbox</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { background: #050811; color: #e2e8f0; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+    
+    /* HUD Overlays */
+    .hud { position: absolute; pointer-events: none; z-index: 10; }
+    .interactive { pointer-events: auto; }
+
+    /* Header */
+    .header { top: 20px; left: 24px; display: flex; align-items: center; gap: 14px; }
+    .header img { width: 38px; height: 38px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); }
+    .header-text h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #fff; }
+    .header-text p { font-size: 0.72rem; color: #00f0ff; letter-spacing: 1px; }
+
+    /* Flight Status Badge */
+    .status-badge {
+      top: 24px; left: 50%; transform: translateX(-50%);
+      padding: 8px 24px; border-radius: 20px;
+      font-size: 0.85rem; font-weight: 700; letter-spacing: 1.5px;
+      text-transform: uppercase;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+    }
+    .status-in-flight { color: #38bdf8; border-color: #38bdf8; }
+    .status-success { color: #4ade80; border-color: #4ade80; box-shadow: 0 0 25px rgba(74, 222, 128, 0.4); }
+    .status-crash { color: #f87171; border-color: #f87171; box-shadow: 0 0 25px rgba(248, 113, 113, 0.4); }
+
+    /* Telemetry Side Panels */
+    .panel {
+      background: rgba(10, 15, 30, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 16px;
+      width: 250px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .panel-left { top: 80px; left: 24px; }
+    .panel-right { top: 80px; right: 24px; }
+
+    .panel-title { font-size: 0.7rem; color: #94a3b8; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; }
+    .telemetry-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .telemetry-label { font-size: 0.75rem; color: #94a3b8; }
+    .telemetry-val { font-size: 1.05rem; font-weight: 700; font-family: monospace; color: #fff; }
+    .telemetry-val small { font-size: 0.7rem; color: #64748b; margin-left: 2px; }
+
+    /* Meters */
+    .meter-bar { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-top: 4px; margin-bottom: 10px; }
+    .meter-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.05s ease; }
+    .fill-fuel { background: linear-gradient(90deg, #f59e0b, #10b981); }
+    .fill-throttle { background: linear-gradient(90deg, #06b6d4, #f43f5e); }
+
+    /* Bottom Control Bar */
+    .controls-bottom {
+      bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 12px; align-items: center;
+      background: rgba(10, 15, 30, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(14px);
+      padding: 12px 20px; border-radius: 14px;
+    }
+    .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+    .ctrl-label { font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    .ctrl-slider { width: 90px; accent-color: #00f0ff; cursor: pointer; }
+    .ctrl-select, .ctrl-btn {
+      background: rgba(30, 41, 59, 0.8);
+      color: #fff; border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px; padding: 6px 12px; font-size: 0.75rem;
+      cursor: pointer; outline: none; transition: all 0.2s;
+    }
+    .ctrl-btn:hover { background: #00f0ff; color: #000; font-weight: 700; }
+    .ctrl-btn-primary { background: #0284c7; border-color: #38bdf8; }
+
+    /* Crosshair Canvas */
+    #gimbal-canvas { width: 60px; height: 60px; background: rgba(0,0,0,0.3); border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- Header -->
+  <div class="hud header">
+    <div class="header-text">
+      <h1>Kepler // Flight Dynamics</h1>
+      <p>Precision Retro-Propulsive 6-DOF Landing Sandbox</p>
+    </div>
+  </div>
+
+  <!-- Status Badge -->
+  <div id="status-badge" class="hud status-badge status-in-flight">APPROACHING DRONE SHIP</div>
+
+  <!-- Left Panel: Kinematics -->
+  <div class="hud panel panel-left">
+    <div class="panel-title">Kinematic Telemetry</div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Altitude (Z)</span>
+      <span class="telemetry-val" id="val-alt">0.0 <small>m</small></span>
+    </div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Descent Speed (Vz)</span>
+      <span class="telemetry-val" id="val-vz">0.0 <small>m/s</small></span>
+    </div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Lateral Speed (Vh)</span>
+      <span class="telemetry-val" id="val-vh">0.0 <small>m/s</small></span>
+    </div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Attitude Tilt</span>
+      <span class="telemetry-val" id="val-tilt">0.0 <small>deg</small></span>
+    </div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Pad Distance</span>
+      <span class="telemetry-val" id="val-dist">0.0 <small>m</small></span>
+    </div>
+    <div class="telemetry-row" style="margin-top: 10px;">
+      <span class="telemetry-label">Crosswind</span>
+      <span class="telemetry-val" id="val-wind">0.0 <small>m/s</small></span>
+    </div>
+  </div>
+
+  <!-- Right Panel: Propulsion -->
+  <div class="hud panel panel-right">
+    <div class="panel-title">Propulsion & Actuators</div>
+    <div class="telemetry-row">
+      <span class="telemetry-label">Main Throttle</span>
+      <span class="telemetry-val" id="val-throttle">0 <small>%</small></span>
+    </div>
+    <div class="meter-bar"><div id="meter-throttle" class="meter-fill fill-throttle"></div></div>
+
+    <div class="telemetry-row">
+      <span class="telemetry-label">Fuel Remaining</span>
+      <span class="telemetry-val" id="val-fuel">0.0 <small>kg</small></span>
+    </div>
+    <div class="meter-bar"><div id="meter-fuel" class="meter-fill fill-fuel"></div></div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+      <div>
+        <span class="telemetry-label">Gimbal (Pitch / Yaw)</span>
+        <div class="telemetry-val" style="font-size:0.85rem;" id="val-gimbal">0.0° / 0.0°</div>
+      </div>
+      <canvas id="gimbal-canvas" width="60" height="60"></canvas>
+    </div>
+  </div>
+
+  <!-- Bottom Control Bar -->
+  <div class="hud interactive controls-bottom">
+    <div class="ctrl-group">
+      <label class="ctrl-label">Controller</label>
+      <select id="sel-mode" class="ctrl-select" onchange="changeMode(this.value)">
+        <option value="rl">Kepler-1 Neural Agent</option>
+        <option value="autopilot" selected>Flight Computer Baseline</option>
+        <option value="manual">Manual Flight (WASD/Arrows)</option>
+        <option value="freefall">Freefall Coast</option>
+      </select>
+    </div>
+
+    <div class="ctrl-group">
+      <label class="ctrl-label">Altitude (<span id="lbl-alt">600</span>m)</label>
+      <input type="range" id="param-alt" class="ctrl-slider" min="150" max="1500" step="50" value="600" oninput="updateParamLabels()">
+    </div>
+
+    <div class="ctrl-group">
+      <label class="ctrl-label">Drift X (<span id="lbl-x">30</span>m)</label>
+      <input type="range" id="param-x" class="ctrl-slider" min="-100" max="100" step="10" value="30" oninput="updateParamLabels()">
+    </div>
+
+    <div class="ctrl-group">
+      <label class="ctrl-label">Wind (<span id="lbl-wind">5</span>m/s)</label>
+      <input type="range" id="param-wind" class="ctrl-slider" min="0" max="20" step="1" value="5" oninput="updateParamLabels()">
+    </div>
+
+    <div class="ctrl-group">
+      <label class="ctrl-label">Camera</label>
+      <select id="sel-cam" class="ctrl-select" onchange="setCameraMode(this.value)">
+        <option value="chase">Booster Chase</option>
+        <option value="pad">Drone Ship Pad</option>
+        <option value="free">Free Orbit</option>
+      </select>
+    </div>
+
+    <button class="ctrl-btn ctrl-btn-primary" onclick="resetSimulation()">Relaunch</button>
+    <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">Pause</button>
+  </div>
+
+  <script>
+    // 3D Scene Initialization
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050914);
+    scene.fog = new THREE.FogExp2(0x050914, 0.0008);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 5000);
+    camera.position.set(0, 100, 250);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.01; // Don't go below water
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xddeeff, 0.6);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.2);
+    sunLight.position.set(300, 600, 400);
+    sunLight.castShadow = true;
+    scene.add(sunLight);
+
+    // Ocean Surface
+    const waterGeo = new THREE.PlaneGeometry(4000, 4000, 64, 64);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x071b2e,
+      roughness: 0.15,
+      metalness: 0.85
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = -0.5;
+    scene.add(water);
+
+    // Grid Floor
+    const gridHelper = new THREE.GridHelper(1000, 50, 0x1e3a5f, 0x0a192f);
+    gridHelper.position.y = 0.0;
+    scene.add(gridHelper);
+
+    // Autonomous Spaceport Drone Ship (ASDS Landing Barge)
+    const bargeGroup = new THREE.Group();
+    const deckGeo = new THREE.BoxGeometry(60, 4, 100);
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 });
+    const deck = new THREE.Mesh(deckGeo, deckMat);
+    deck.position.y = 1.5;
+    deck.receiveShadow = true;
+    bargeGroup.add(deck);
+
+    // Bullseye Ring on Pad
+    const padOuterGeo = new THREE.RingGeometry(14, 15, 48);
+    const padOuterMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, side: THREE.DoubleSide });
+    const padOuter = new THREE.Mesh(padOuterGeo, padOuterMat);
+    padOuter.rotation.x = -Math.PI / 2;
+    padOuter.position.y = 3.55;
+    bargeGroup.add(padOuter);
+
+    const padInnerGeo = new THREE.RingGeometry(2.8, 3.2, 32);
+    const padInnerMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide });
+    const padInner = new THREE.Mesh(padInnerGeo, padInnerMat);
+    padInner.rotation.x = -Math.PI / 2;
+    padInner.position.y = 3.56;
+    bargeGroup.add(padInner);
+    scene.add(bargeGroup);
+
+    // Rocket 3D Model Group
+    const rocketGroup = new THREE.Group();
+
+    // Cylindrical Body (50m high, 3.7m diameter -> in Three.js coords, Y is up)
+    const bodyGeo = new THREE.CylinderGeometry(1.83, 1.83, 50, 32);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      roughness: 0.3,
+      metalness: 0.3
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 25.0; // Base at y=0, CM around y=20
+    body.castShadow = true;
+    rocketGroup.add(body);
+
+    // Interstage Ring (Black band at top)
+    const interstageGeo = new THREE.CylinderGeometry(1.85, 1.85, 8, 32);
+    const interstageMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+    const interstage = new THREE.Mesh(interstageGeo, interstageMat);
+    interstage.position.y = 44.0;
+    rocketGroup.add(interstage);
+
+    // Grid Fins (4 fins near top)
+    for (let i = 0; i < 4; i++) {
+      const finGeo = new THREE.BoxGeometry(0.2, 1.8, 1.2);
+      const finMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 });
+      const fin = new THREE.Mesh(finGeo, finMat);
+      const angle = (i * Math.PI) / 2;
+      fin.position.set(Math.cos(angle) * 2.3, 44.0, Math.sin(angle) * 2.3);
+      fin.rotation.y = angle;
+      rocketGroup.add(fin);
+    }
+
+    // Engine Gimbal Pivot Group (at base y=0)
+    const engineGimbalGroup = new THREE.Group();
+    engineGimbalGroup.position.set(0, 0, 0);
+
+    // Engine Nozzle
+    const nozzleGeo = new THREE.ConeGeometry(1.2, 2.5, 24, 1, true);
+    const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.6, metalness: 0.9 });
+    const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
+    nozzle.position.y = -1.25;
+    nozzle.rotation.x = Math.PI; // Opening downwards
+    engineGimbalGroup.add(nozzle);
+
+    // Exhaust Plume (Emissive Flame)
+    const flameGeo = new THREE.ConeGeometry(1.0, 15, 24, 1, true);
+    const flameMat = new THREE.MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.0,
+      side: THREE.DoubleSide
+    });
+    const flame = new THREE.Mesh(flameGeo, flameMat);
+    flame.position.y = -8.5;
+    flame.rotation.x = Math.PI;
+    engineGimbalGroup.add(flame);
+
+    // Core Flame (Cyan/White center)
+    const coreFlameGeo = new THREE.ConeGeometry(0.5, 12, 16, 1, true);
+    const coreFlameMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.0 });
+    const coreFlame = new THREE.Mesh(coreFlameGeo, coreFlameMat);
+    coreFlame.position.y = -7.0;
+    coreFlame.rotation.x = Math.PI;
+    engineGimbalGroup.add(coreFlame);
+
+    rocketGroup.add(engineGimbalGroup);
+
+    // Landing Legs (4 legs that deploy near touchdown)
+    const legs = [];
+    for (let i = 0; i < 4; i++) {
+      const legGroup = new THREE.Group();
+      const legAngle = (i * Math.PI) / 2;
+      legGroup.position.set(Math.cos(legAngle) * 1.83, 1.5, Math.sin(legAngle) * 1.83);
+      legGroup.rotation.y = legAngle;
+
+      const legBarGeo = new THREE.CylinderGeometry(0.12, 0.12, 8.0);
+      const legBarMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 });
+      const legBar = new THREE.Mesh(legBarGeo, legBarMat);
+      legBar.position.set(0, -3.8, 0);
+      legBar.rotation.x = 0.05; // Default retracted
+      legGroup.add(legBar);
+
+      rocketGroup.add(legGroup);
+      legs.push({ group: legGroup, bar: legBar });
+    }
+
+    scene.add(rocketGroup);
+
+    // Trajectory Ribbon
+    const maxTrailPoints = 300;
+    const trailPositions = new Float32Array(maxTrailPoints * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.6 });
+    const trailLine = new THREE.Line(trailGeo, trailMat);
+    scene.add(trailLine);
+    let trailIndex = 0;
+
+    // WebSocket Telemetry Connection
+    let ws = null;
+    let cameraMode = "chase";
+    let isPaused = false;
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws/telemetry`);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        updateTelemetry(data);
+      };
+
+      ws.onclose = () => {
+        setTimeout(connectWebSocket, 1000);
+      };
+    }
+    connectWebSocket();
+
+    // UI Updates & 3D Sync
+    function updateTelemetry(d) {
+      // Coordinate mapping: Kepler physics: Z is UP, X is lateral, Y is longitudinal
+      // Three.js: Y is UP, X is lateral, Z is longitudinal
+      const posX = d.pos[0];
+      const posY = d.pos[2]; // Altitude is Y in Three.js
+      const posZ = d.pos[1];
+
+      rocketGroup.position.set(posX, posY, posZ);
+
+      // Attitude: Quaternion [qw, qx, qy, qz]
+      // Map body Z (up in physics) to Three.js Y (up in Three.js)
+      // Kepler: q = [qw, qx, qy, qz]
+      // In Three.js: Rocket's long axis is +Y, while physics long axis is +Z
+      const q = new THREE.Quaternion(d.quat[1], d.quat[3], d.quat[2], d.quat[0]);
+      // Rotate by 90 deg around X to align physics +Z with Three.js +Y
+      const qAlign = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+      rocketGroup.quaternion.copy(q).multiply(qAlign);
+
+      // Engine Gimbal Deflection
+      engineGimbalGroup.rotation.z = -THREE.MathUtils.degToRad(d.gimbal_deg[0]);
+      engineGimbalGroup.rotation.x = THREE.MathUtils.degToRad(d.gimbal_deg[1]);
+
+      // Engine Flame Volume & Brightness
+      const thrPct = d.throttle_pct / 100.0;
+      if (thrPct > 0.05) {
+        flame.material.opacity = 0.85 * thrPct;
+        coreFlame.material.opacity = 0.95 * thrPct;
+        const flameScale = 0.5 + 1.2 * thrPct;
+        flame.scale.set(1.0, flameScale, 1.0);
+        coreFlame.scale.set(1.0, flameScale, 1.0);
+      } else {
+        flame.material.opacity = 0.0;
+        coreFlame.material.opacity = 0.0;
+      }
+
+      // Landing Legs Deployment
+      legs.forEach(leg => {
+        if (d.legs_deployed) {
+          leg.bar.rotation.x = 0.75; // Deployed outwards
+        } else {
+          leg.bar.rotation.x = 0.05; // Retracted
+        }
+      });
+
+      // Trajectory Trail Update
+      if (trailIndex < maxTrailPoints) {
+        trailPositions[trailIndex * 3 + 0] = posX;
+        trailPositions[trailIndex * 3 + 1] = posY;
+        trailPositions[trailIndex * 3 + 2] = posZ;
+        trailIndex++;
+        trailGeo.attributes.position.needsUpdate = true;
+      }
+
+      // Camera Tracking
+      if (cameraMode === "chase") {
+        controls.target.set(posX, Math.max(10, posY), posZ);
+      } else if (cameraMode === "pad") {
+        controls.target.set(0, 5, 0);
+      }
+
+      // Update HUD Values
+      document.getElementById('val-alt').innerHTML = `${d.pos[2].toFixed(1)} <small>m</small>`;
+      document.getElementById('val-vz').innerHTML = `${d.vel[2].toFixed(1)} <small>m/s</small>`;
+      const vh = Math.sqrt(d.vel[0]**2 + d.vel[1]**2);
+      document.getElementById('val-vh').innerHTML = `${vh.toFixed(1)} <small>m/s</small>`;
+      document.getElementById('val-tilt').innerHTML = `${d.tilt_deg.toFixed(1)} <small>deg</small>`;
+      document.getElementById('val-dist').innerHTML = `${d.dist_to_pad.toFixed(1)} <small>m</small>`;
+      const windSpeed = Math.sqrt(d.wind[0]**2 + d.wind[1]**2);
+      document.getElementById('val-wind').innerHTML = `${windSpeed.toFixed(1)} <small>m/s</small>`;
+
+      document.getElementById('val-throttle').innerHTML = `${d.throttle_pct.toFixed(0)} <small>%</small>`;
+      document.getElementById('meter-throttle').style.width = `${d.throttle_pct}%`;
+
+      document.getElementById('val-fuel').innerHTML = `${d.fuel_mass.toFixed(0)} <small>kg</small>`;
+      document.getElementById('meter-fuel').style.width = `${d.fuel_pct}%`;
+
+      document.getElementById('val-gimbal').innerText = `${d.gimbal_deg[0].toFixed(1)}° / ${d.gimbal_deg[1].toFixed(1)}°`;
+      drawGimbalCanvas(d.gimbal_deg[0], d.gimbal_deg[1]);
+
+      // Status Badge
+      const badge = document.getElementById('status-badge');
+      if (d.status === "SUCCESSFUL_LANDING") {
+        badge.innerText = "TOUCHDOWN // SUCCESSFUL LANDING";
+        badge.className = "hud status-badge status-success";
+      } else if (d.status === "CRASH_IMPACT") {
+        badge.innerText = "MISSION FAILED // CRASH IMPACT";
+        badge.className = "hud status-badge status-crash";
+      } else {
+        if (d.throttle_pct > 30) {
+          badge.innerText = "HOVERSLAM BURN ACTIVE";
+          badge.className = "hud status-badge status-in-flight";
+        } else {
+          badge.innerText = "APPROACHING DRONE SHIP";
+          badge.className = "hud status-badge status-in-flight";
+        }
+      }
+    }
+
+    // Gimbal Crosshair Canvas
+    function drawGimbalCanvas(gy, gz) {
+      const c = document.getElementById('gimbal-canvas');
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, 60, 60);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(30, 30, 24, 0, Math.PI * 2);
+      ctx.moveTo(30, 6); ctx.lineTo(30, 54);
+      ctx.moveTo(6, 30); ctx.lineTo(54, 30);
+      ctx.stroke();
+
+      // Dot offset (max 10 deg -> 22 pixels)
+      const dx = (gz / 10.0) * 22;
+      const dy = -(gy / 10.0) * 22;
+      ctx.fillStyle = '#00f0ff';
+      ctx.beginPath();
+      ctx.arc(30 + dx, 30 + dy, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Interactive Controls
+    function updateParamLabels() {
+      document.getElementById('lbl-alt').innerText = document.getElementById('param-alt').value;
+      document.getElementById('lbl-x').innerText = document.getElementById('param-x').value;
+      document.getElementById('lbl-wind').innerText = document.getElementById('param-wind').value;
+    }
+
+    function resetSimulation() {
+      trailIndex = 0;
+      for (let i = 0; i < maxTrailPoints * 3; i++) trailPositions[i] = 0;
+      trailGeo.attributes.position.needsUpdate = true;
+
+      const params = {
+        altitude: parseFloat(document.getElementById('param-alt').value),
+        offsetX: parseFloat(document.getElementById('param-x').value),
+        offsetY: 0.0,
+        windSpeed: parseFloat(document.getElementById('param-wind').value),
+        fuel: 8000.0
+      };
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "reset", params: params }));
+      }
+    }
+
+    function changeMode(mode) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "set_mode", mode: mode }));
+      }
+    }
+
+    function togglePause() {
+      isPaused = !isPaused;
+      document.getElementById('btn-pause').innerText = isPaused ? "Resume" : "Pause";
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "toggle_pause" }));
+      }
+    }
+
+    function setCameraMode(mode) {
+      cameraMode = mode;
+      if (mode === "pad") {
+        camera.position.set(0, 20, 80);
+      }
+    }
+
+    // Manual Keyboard Controls (WASD / Arrows)
+    let manualThrottle = 0.0;
+    let manualGy = 0.0;
+    let manualGz = 0.0;
+
+    window.addEventListener('keydown', (e) => {
+      const mode = document.getElementById('sel-mode').value;
+      if (mode !== 'manual') return;
+
+      if (e.key === 'ArrowUp' || e.key === 'w') manualThrottle = Math.min(1.0, manualThrottle + 0.1);
+      if (e.key === 'ArrowDown' || e.key === 's') manualThrottle = Math.max(0.0, manualThrottle - 0.1);
+      if (e.key === 'ArrowLeft' || e.key === 'a') manualGz = Math.max(-1.0, manualGz - 0.2);
+      if (e.key === 'ArrowRight' || e.key === 'd') manualGz = Math.min(1.0, manualGz + 0.2);
+      if (e.key === 'q') manualGy = Math.max(-1.0, manualGy - 0.2);
+      if (e.key === 'e') manualGy = Math.min(1.0, manualGy + 0.2);
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: "manual_input",
+          throttle: manualThrottle,
+          gimbal_y: manualGy,
+          gimbal_z: manualGz
+        }));
+      }
+    });
+
+    // Animation Loop (60 FPS)
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
