@@ -35,6 +35,7 @@ ENV/
 # Model checkpoints & logs
 checkpoints/*
 !checkpoints/kepler_1.zip
+!checkpoints/kepler_k1.zip
 runs/
 logs/
 *.pt

@@ -39,6 +39,7 @@ class BoosterConfig:
     # Thrust Vector Control (Gimbal)
     max_gimbal_angle: float = np.radians(10.0)  # Max gimbal deflection (+/- 10 deg)
     gimbal_slew_rate: float = np.radians(25.0)  # Gimbal angular velocity limit (rad/s)
+    throttle_slew_rate: float = 8.0             # Engine throttle rate limit (1/s, 0 to 100% in 0.125s)
 
     # Reaction Control System (Cold-gas thrusters at rocket top)
     rcs_thrust: float = 2000.0      # Thrust per RCS nozzle (N)

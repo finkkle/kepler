@@ -172,8 +172,10 @@ class SimulationSession:
 
 session = SimulationSession()
 
-# Check for trained model
-default_model_path = Path(__file__).parent.parent.parent / "checkpoints" / "kepler_1.zip"
+# Check for trained model (prefer next-gen kepler_k1.zip, fallback to kepler_1.zip)
+k1_model_path = Path(__file__).parent.parent.parent / "checkpoints" / "kepler_k1.zip"
+legacy_model_path = Path(__file__).parent.parent.parent / "checkpoints" / "kepler_1.zip"
+default_model_path = k1_model_path if k1_model_path.exists() else legacy_model_path
 if default_model_path.exists():
     session.load_rl_agent(str(default_model_path))
     session.mode = "rl"

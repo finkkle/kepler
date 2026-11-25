@@ -93,4 +93,5 @@ def evaluate_kepler1(model_path: str = None, num_flights: int = 30):
     return results
 
 if __name__ == "__main__":
-    evaluate_kepler1()
+    model_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    evaluate_kepler1(model_arg)

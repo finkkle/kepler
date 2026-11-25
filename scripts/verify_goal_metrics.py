@@ -116,10 +116,12 @@ def audit_controller(name, controller_obj, is_model=False):
 
 if __name__ == "__main__":
     fc = KeplerFlightComputer()
-    fc_ok = audit_controller("Kepler Flight Computer (Baseline)", fc, is_model=False)
+    fc_ok = audit_controller("Kepler Flight Computer (Upgraded Glideslope)", fc, is_model=False)
 
-    model = PPO.load("checkpoints/kepler_1.zip")
-    model_ok = audit_controller("Kepler-1 Neural Agent (Trained)", model, is_model=True)
+    ckpt_to_load = "checkpoints/kepler_k1.zip" if Path("checkpoints/kepler_k1.zip").exists() else "checkpoints/kepler_1.zip"
+    name_str = "Kepler-K1 Neural Agent (Next-Gen Policy)" if "k1" in ckpt_to_load else "Kepler-1 Neural Agent"
+    model = PPO.load(ckpt_to_load)
+    model_ok = audit_controller(name_str, model, is_model=True)
 
     if fc_ok and model_ok:
         print("\n>>> ALL GOAL DELIVERABLES FORMALLY VERIFIED: 100% 30/30 ON BOTH CONTROLLERS <<<")

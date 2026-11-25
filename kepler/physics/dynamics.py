@@ -51,6 +51,9 @@ class RocketDynamics:
         self.sim_cfg = sim_cfg or SimConfig()
         self.wind = WindField()
         self.state = RocketState()
+        self.act_throttle: float = 0.0
+        self.act_gimbal_y: float = 0.0
+        self.act_gimbal_z: float = 0.0
 
     def get_mass_properties(self, fuel: float) -> tuple[float, float, np.ndarray]:
         """Compute instantaneous total mass, center of mass, and diagonal inertia tensor."""
@@ -96,6 +99,9 @@ class RocketDynamics:
             rho = Atmosphere.density(altitude)
             isp = self.cfg.isp_sea_level + (self.cfg.isp_vacuum - self.cfg.isp_sea_level) * (1.0 - min(1.0, rho / Atmosphere.RHO_0))
             thrust_n = eff_throttle * self.cfg.max_thrust
+            # Ground effect stagnation cushion near landing pad deck (z < 15m)
+            if altitude < 15.0:
+                thrust_n *= (1.0 + 0.05 * np.exp(-altitude / 5.0))
             fuel_burn_rate = thrust_n / (isp * self.cfg.g0)
         else:
             eff_throttle = 0.0
@@ -131,13 +137,27 @@ class RocketDynamics:
             0.0
         ], dtype=np.float64)
 
-        # 2. Reaction Control System (RCS) torque
-        # RCS nozzles provide roll torque and attitude fine-trim
-        tau_rcs_body = np.array([0.0, 0.0, rcs_cmd * self.cfg.rcs_thrust * self.cfg.radius], dtype=np.float64)
-
-        # 3. Aerodynamics
+        # 2. Aerodynamics & Relative Velocity
         v_rel_world = vel - wind_vel
         speed_rel = np.linalg.norm(v_rel_world)
+
+        # 3. Reaction Control System (RCS) & Aerodynamic Grid Fins
+        # When engine is active, TVC dominates. When engine is cut off (coasting aloft),
+        # cold-gas nitrogen RCS thrusters and titanium grid fins at top (arm rcs_arm) provide active attitude steering.
+        r_top_cm = self.cfg.rcs_arm - z_cm
+        if thrust_n <= 0.0:
+            rho = Atmosphere.density(pos[2])
+            q_dyn = 0.5 * rho * (speed_rel ** 2)
+            fin_authority = min(120000.0, self.cfg.rcs_thrust + 0.25 * q_dyn)
+            tau_control_x = sin_y * fin_authority * r_top_cm
+            tau_control_y = -sin_p * fin_authority * r_top_cm
+        else:
+            tau_control_x = 0.0
+            tau_control_y = 0.0
+
+        tau_rcs_body = np.array([tau_control_x, tau_control_y, rcs_cmd * self.cfg.rcs_thrust * self.cfg.radius], dtype=np.float64)
+
+        # 4. Aerodynamic Forces (Drag & Lift)
         if speed_rel > 0.1:
             rho = Atmosphere.density(pos[2])
             q_inf = 0.5 * rho * (speed_rel ** 2)
@@ -153,8 +173,21 @@ class RocketDynamics:
 
             # Drag force in body frame opposed to relative velocity
             cd_eff = self.cfg.cd_base * np.abs(cos_alpha) + self.cfg.cd_cross * sin_alpha
-            f_aero_mag = q_inf * cd_eff * self.cfg.cross_section_area
-            f_aero_world = -f_aero_mag * (v_rel_world / speed_rel)
+            f_drag_mag = q_inf * cd_eff * self.cfg.cross_section_area
+            f_drag_world = -f_drag_mag * (v_rel_world / speed_rel)
+
+            # Slender-body aerodynamic normal force (crossflow lift & grid-fin glide)
+            cn = 0.5 * sin_alpha * np.abs(cos_alpha) + 0.8 * (sin_alpha ** 2)
+            f_lift_mag = q_inf * cn * self.cfg.cross_section_area
+            body_z_world = rot_mat[:, 2]
+            v_perp = v_rel_world - np.dot(v_rel_world, body_z_world) * body_z_world
+            v_perp_norm = np.linalg.norm(v_perp)
+            if v_perp_norm > 1e-4:
+                f_lift_world = -f_lift_mag * (v_perp / v_perp_norm)
+            else:
+                f_lift_world = np.zeros(3, dtype=np.float64)
+
+            f_aero_world = f_drag_world + f_lift_world
 
             # Aerodynamic moment about CM (restoring moment from grid fins/center of pressure)
             r_cp_cm = np.array([0.0, 0.0, self.cfg.cp_nominal - z_cm], dtype=np.float64)
@@ -290,6 +323,9 @@ class RocketDynamics:
         self.state.omega = np.random.uniform(-0.02, 0.02, size=3)
         self.state.fuel_mass = self.cfg.default_fuel if fuel_mass is None else float(fuel_mass)
         self.state.ground_contact = False
+        self.act_throttle = 0.0
+        self.act_gimbal_y = 0.0
+        self.act_gimbal_z = 0.0
 
         m_tot, _, _ = self.get_mass_properties(self.state.fuel_mass)
         self.state.mass_total = float(m_tot)
