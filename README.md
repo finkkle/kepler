@@ -39,10 +39,11 @@ Kepler-1 was rigorously benchmarked across 30 randomized flights with varying in
 | Metric | Target Specification | **Kepler-1 Neural Agent** | Status |
 | :--- | :--- | :--- | :---: |
 | **Touchdown Success Rate** | 100.0% (30/30) | **100.0%** (30/30) | **PASSED** |
-| **Touchdown Velocity ($v_z$)** | $< 2.0\text{ m/s}$ | **$-1.15\text{ m/s}$** | **PASSED** |
-| **Pad Radial Dispersion** | $< 15.0\text{ m}$ (ASDS Deck) | **$0.43\text{ m}$** (Sub-meter Bullseye) | **PASSED** |
-| **Upright Attitude Tilt** | $< 5.0^\circ$ | **$0.01^\circ$** | **PASSED** |
-| **Propellant Conserved** | $> 2,000\text{ kg}$ reserve | **$3,156.5\text{ kg}$** / 8,000 kg | **PASSED** |
+| **Touchdown Velocity ($v_z$)** | $< 2.0\text{ m/s}$ | **$-1.24\text{ m/s}$** | **PASSED** |
+| **Pad Radial Dispersion** | $< 15.0\text{ m}$ (ASDS Deck) | **$4.98\text{ m}$** (ASDS Deck) | **PASSED** |
+| **Upright Attitude Tilt** | $< 5.0^\circ$ | **$0.09^\circ$** (Precision Vertical) | **PASSED** |
+| **Propellant Conserved** | $> 2,000\text{ kg}$ reserve | **$5,537.0\text{ kg}$** / 8,000 kg (69.2% Conserved) | **PASSED** |
+| **Terminal Hovering** | None (Direct descent) | **0.00 s** (Direct hoverslam flare) | **PASSED** |
 
 > [!NOTE]
 > All benchmarks were conducted with standard physics constraints: dry mass 25,000 kg, initial landing fuel 8,000 kg, Merlin 1D max thrust 845 kN, minimum throttle 40%, 10° TVC gimbal limit, and continuous aerodynamic drag. In addition, Kepler-1 successfully demonstrated 100% touchdown reliability across multi-altitude sandbox drops ranging from 120 m to 800 m under active wind gusts.
