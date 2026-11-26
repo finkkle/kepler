@@ -118,8 +118,15 @@ if __name__ == "__main__":
     fc = KeplerFlightComputer()
     fc_ok = audit_controller("Kepler Flight Computer (Upgraded Glideslope)", fc, is_model=False)
 
-    ckpt_to_load = "checkpoints/kepler_k1.zip" if Path("checkpoints/kepler_k1.zip").exists() else "checkpoints/kepler_1.zip"
-    name_str = "Kepler-K1 Neural Agent (Next-Gen Policy)" if "k1" in ckpt_to_load else "Kepler-1 Neural Agent"
+    if Path("checkpoints/kepler_k2.zip").exists():
+        ckpt_to_load = "checkpoints/kepler_k2.zip"
+        name_str = "Kepler-K2 Neural Agent (Continuous Hoverslam Policy)"
+    elif Path("checkpoints/kepler_k1.zip").exists():
+        ckpt_to_load = "checkpoints/kepler_k1.zip"
+        name_str = "Kepler-K1 Neural Agent (Next-Gen Policy)"
+    else:
+        ckpt_to_load = "checkpoints/kepler_1.zip"
+        name_str = "Kepler-1 Neural Agent"
     model = PPO.load(ckpt_to_load)
     model_ok = audit_controller(name_str, model, is_model=True)
 

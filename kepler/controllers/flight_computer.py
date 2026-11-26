@@ -7,10 +7,11 @@ class KeplerFlightComputer:
     """
     Space-Grade Autonomous Flight Computer:
     1. Kinematic hoverslam ignition solver with lateral reachability buffer.
-    2. Decoupled square-root deceleration tracking with seamless flare blending.
-    3. Zero-hover terminal settling onto ASDS drone ship landing legs.
-    4. Precision lateral guidance corridor with aerodynamic feedforward wind compensation.
-    5. Upright vertical touchdown (< 0.5 deg tilt, < 0.5 m/s horizontal drift).
+    2. Continuous single-burn hoverslam with zero engine cutoffs / chattering during burn.
+    3. Decoupled square-root deceleration glideslope with smooth terminal flare.
+    4. Zero-hover terminal touchdown onto ASDS drone ship landing legs.
+    5. Precision lateral guidance corridor with aerodynamic feedforward wind compensation.
+    6. Upright vertical touchdown (< 0.5 deg tilt, < 0.5 m/s horizontal drift).
     """
 
     def __init__(
@@ -21,7 +22,7 @@ class KeplerFlightComputer:
         lat_factor: float = 3.5,
         flare_alt: float = 6.0,
         target_vz: float = -1.15,
-        pos_gain: float = 0.26,
+        pos_gain: float = 0.30,
     ):
         self.cfg = booster_cfg or BoosterConfig()
         self.thrust_design_frac = thrust_design_frac
@@ -110,7 +111,7 @@ class KeplerFlightComputer:
             return np.array([-0.50, 0.0, 0.0, rcs_roll], dtype=np.float32)
 
         # -----------------------------------------------------------------
-        # 4. Deceleration Glideslope & Throttle Tracking
+        # 4. Deceleration Glideslope & Continuous Throttle Tracking
         # -----------------------------------------------------------------
         thrust_design = self.thrust_design_frac * self.cfg.max_thrust
         a_net = (thrust_design / max(1.0, mass)) - self.cfg.g0
@@ -128,11 +129,8 @@ class KeplerFlightComputer:
         desired_accel_z = self.cfg.g0 + a_net_blend + 5.0 * vz_error
         desired_thrust_n = mass * desired_accel_z
 
-        min_thrust_n = self.cfg.min_throttle * self.cfg.max_thrust
-        if desired_thrust_n < min_thrust_n and vz > (self.target_vz + 0.1):
-            throttle_norm = -0.50
-        else:
-            throttle = float(np.clip(desired_thrust_n / self.cfg.max_thrust, self.cfg.min_throttle, 1.0))
-            throttle_norm = float((throttle - self.cfg.min_throttle) / (1.0 - self.cfg.min_throttle))
+        # Continuous single-burn hoverslam: throttle never drops below min_throttle during burn
+        throttle = float(np.clip(desired_thrust_n / self.cfg.max_thrust, self.cfg.min_throttle, 1.0))
+        throttle_norm = float((throttle - self.cfg.min_throttle) / (1.0 - self.cfg.min_throttle))
 
         return np.array([throttle_norm, a_tp, a_tr, rcs_roll], dtype=np.float32)

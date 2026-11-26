@@ -27,8 +27,10 @@ class SimulationSession:
         self.dynamics = RocketDynamics(self.cfg, self.sim_cfg)
         self.flight_computer = KeplerFlightComputer(self.cfg)
         self.rl_agent = None  # Loaded if available
+        self.k2_agent = None
+        self.k1_agent = None
 
-        self.mode = "autopilot"  # 'autopilot', 'rl', 'manual', 'freefall'
+        self.mode = "rl_k2"  # 'rl_k2', 'autopilot', 'rl_k1', 'manual', 'freefall'
         self.running = True
         self.paused = False
 
@@ -92,8 +94,14 @@ class SimulationSession:
             wind[0] / 20.0, wind[1] / 20.0
         ], dtype=np.float32)
 
-        if self.mode == "rl" and self.rl_agent is not None:
-            action, _ = self.rl_agent.predict(obs, deterministic=True)
+        active_agent = None
+        if self.mode in ["rl", "rl_k2"]:
+            active_agent = self.k2_agent or self.rl_agent
+        elif self.mode == "rl_k1":
+            active_agent = self.k1_agent or self.rl_agent
+
+        if active_agent is not None:
+            action, _ = active_agent.predict(obs, deterministic=True)
             a_th, a_tp, a_tr, a_rcs = action
         elif self.mode == "autopilot":
             action = self.flight_computer.get_action(obs)
@@ -111,7 +119,7 @@ class SimulationSession:
             gz_cmd = 0.0
             rcs_cmd = 0.0
 
-        if self.mode in ["rl", "autopilot"] and action is not None:
+        if self.mode in ["rl", "rl_k2", "rl_k1", "autopilot"] and action is not None:
             throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
 
             # Inner-loop TVC
@@ -172,12 +180,34 @@ class SimulationSession:
 
 session = SimulationSession()
 
-# Check for trained model (prefer next-gen kepler_k1.zip, fallback to kepler_1.zip)
-k1_model_path = Path(__file__).parent.parent.parent / "checkpoints" / "kepler_k1.zip"
-legacy_model_path = Path(__file__).parent.parent.parent / "checkpoints" / "kepler_1.zip"
-default_model_path = k1_model_path if k1_model_path.exists() else legacy_model_path
-if default_model_path.exists():
-    session.load_rl_agent(str(default_model_path))
+# Check for trained models: prefer next-gen kepler_k2.zip, with kepler_k1.zip and kepler_1.zip fallbacks
+checkpoints_dir = Path(__file__).parent.parent.parent / "checkpoints"
+k2_model_path = checkpoints_dir / "kepler_k2.zip"
+k1_model_path = checkpoints_dir / "kepler_k1.zip"
+legacy_model_path = checkpoints_dir / "kepler_1.zip"
+
+from stable_baselines3 import PPO
+
+if k2_model_path.exists():
+    try:
+        session.k2_agent = PPO.load(str(k2_model_path))
+        session.rl_agent = session.k2_agent
+        session.mode = "rl_k2"
+        print(f"[SimSession] Successfully loaded Kepler-K2 model from {k2_model_path}")
+    except Exception as e:
+        print(f"[SimSession] Error loading Kepler-K2: {e}")
+
+if k1_model_path.exists():
+    try:
+        session.k1_agent = PPO.load(str(k1_model_path))
+        if session.rl_agent is None:
+            session.rl_agent = session.k1_agent
+            session.mode = "rl_k1"
+        print(f"[SimSession] Successfully loaded Kepler-K1 model from {k1_model_path}")
+    except Exception as e:
+        print(f"[SimSession] Error loading Kepler-K1: {e}")
+elif legacy_model_path.exists() and session.rl_agent is None:
+    session.load_rl_agent(str(legacy_model_path))
     session.mode = "rl"
 
 @app.get("/")
