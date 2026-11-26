@@ -57,7 +57,7 @@ Kepler-1 was rigorously benchmarked across 30 randomized flights with varying in
 Clone repository and install dependencies in an editable environment:
 
 ```bash
-git clone https://github.com/Owl-LLC/kepler.git
+git clone https://github.com/finkkle/kepler.git
 cd kepler
 pip install -e .
 ```
