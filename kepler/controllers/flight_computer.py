@@ -18,10 +18,10 @@ class KeplerFlightComputer:
         self,
         booster_cfg: BoosterConfig | None = None,
         thrust_design_frac: float = 0.55,
-        pad_alt: float = 25.0,
+        pad_alt: float = 24.0,
         lat_factor: float = 3.5,
-        flare_alt: float = 6.0,
-        target_vz: float = -1.15,
+        flare_alt: float = 5.5,
+        target_vz: float = -1.18,
         pos_gain: float = 0.30,
     ):
         self.cfg = booster_cfg or BoosterConfig()

@@ -30,7 +30,7 @@ class SimulationSession:
         self.k2_agent = None
         self.k1_agent = None
 
-        self.mode = "rl_k2"  # 'rl_k2', 'autopilot', 'rl_k1', 'manual', 'freefall'
+        self.mode = "autopilot"  # 'autopilot', 'rl_k2', 'rl_k1', 'manual', 'freefall'
         self.running = True
         self.paused = False
 
