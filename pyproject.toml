@@ -7,9 +7,9 @@ name = "kepler-controller"
 version = "0.1.0"
 description = "Autonomous precision rocket landing controller using reinforcement learning in a realistic 6-DOF physics sandbox."
 authors = [
-    { name = "Owl LLC" }
+    { name = "finkkle" }
 ]
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
