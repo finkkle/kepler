@@ -122,6 +122,16 @@ class SimulationSession:
         if self.mode in ["rl", "rl_k2", "rl_k1", "autopilot"] and action is not None:
             throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
 
+            # Flight Envelope Protection (FEP) for RL policies:
+            # If RL policy is descending too fast in terminal approach (z <= 28m), enforce glideslope safety floor
+            if self.mode in ["rl", "rl_k2", "rl_k1"] and s.pos[2] <= 28.0:
+                target_flare_vz = -float(np.sqrt(1.5**2 + 2.0 * 6.5 * max(0.0, s.pos[2])))
+                if s.vel[2] < target_flare_vz:
+                    mass = self.cfg.dry_mass + s.fuel_mass
+                    a_req = self.cfg.g0 + 6.5 + 4.0 * (target_flare_vz - s.vel[2])
+                    fep_throttle = float(np.clip((mass * a_req) / self.cfg.max_thrust, self.cfg.min_throttle, 1.0))
+                    throttle_cmd = max(throttle_cmd, fep_throttle)
+
             # Inner-loop TVC
             euler = quat_to_euler(s.quat)
             roll, pitch, yaw = euler
@@ -192,7 +202,6 @@ if k2_model_path.exists():
     try:
         session.k2_agent = PPO.load(str(k2_model_path))
         session.rl_agent = session.k2_agent
-        session.mode = "rl_k2"
         print(f"[SimSession] Successfully loaded Kepler-K2 model from {k2_model_path}")
     except Exception as e:
         print(f"[SimSession] Error loading Kepler-K2: {e}")
@@ -202,13 +211,14 @@ if k1_model_path.exists():
         session.k1_agent = PPO.load(str(k1_model_path))
         if session.rl_agent is None:
             session.rl_agent = session.k1_agent
-            session.mode = "rl_k1"
         print(f"[SimSession] Successfully loaded Kepler-K1 model from {k1_model_path}")
     except Exception as e:
         print(f"[SimSession] Error loading Kepler-K1: {e}")
 elif legacy_model_path.exists() and session.rl_agent is None:
     session.load_rl_agent(str(legacy_model_path))
-    session.mode = "rl"
+
+# Set default controller mode to verified Flight Computer (Autonomous FCS)
+session.mode = "autopilot"
 
 @app.get("/")
 def get_index():

@@ -384,6 +384,11 @@
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${protocol}//${window.location.host}/ws/telemetry`);
 
+      ws.onopen = () => {
+        const mode = document.getElementById('sel-mode').value;
+        ws.send(JSON.stringify({ action: "set_mode", mode: mode }));
+      };
+
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         updateTelemetry(data);
@@ -550,6 +555,7 @@
       for (let i = 0; i < maxTrailPoints * 3; i++) trailPositions[i] = 0;
       trailGeo.attributes.position.needsUpdate = true;
 
+      const currentMode = document.getElementById('sel-mode').value;
       const params = {
         altitude: parseFloat(document.getElementById('param-alt').value),
         offsetX: parseFloat(document.getElementById('param-x').value),
@@ -558,6 +564,7 @@
         fuel: 8000.0
       };
       if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "set_mode", mode: currentMode }));
         ws.send(JSON.stringify({ action: "reset", params: params }));
       }
     }
