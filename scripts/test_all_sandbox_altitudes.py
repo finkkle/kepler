@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 import numpy as np
 
-PROJECT_ROOT = Path("C:/Users/PC/Projects/kepler")
+PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from kepler.sim3d.server import session
@@ -15,11 +15,19 @@ test_cases = [
     ("Drop 120m Flare",     120.0, -10.0, 8.0, 2.0),
 ]
 
-for mode_name, mode_id in [("Flight Computer (Autonomous FCS)", "autopilot"), ("Kepler-K2 Neural Agent", "rl")]:
+controllers = [
+    ("Kepler-K3 (Frontier Champion)", "k3_champion"),
+    ("Kepler-K3² (High-Performance Runner-Up)", "k3_runnerup"),
+    ("Flight Computer (Autonomous FCS)", "autopilot"),
+    ("Kepler-K2 (Zero-Hover Policy)", "rl_k2"),
+    ("Kepler-K1 Neural Agent", "rl_k1"),
+]
+
+for mode_name, mode_id in controllers:
     session.mode = mode_id
     succ = 0
     print(f"\n{'='*75}")
-    print(f"  EVALUATING: {mode_name}")
+    print(f"  EVALUATING: {mode_name} (Mode: {mode_id})")
     print(f"{'='*75}")
     for name, alt_init, x_init, y_init, w_init in test_cases:
         session.init_alt = alt_init

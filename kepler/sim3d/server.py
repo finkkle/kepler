@@ -27,10 +27,11 @@ class SimulationSession:
         self.dynamics = RocketDynamics(self.cfg, self.sim_cfg)
         self.flight_computer = KeplerFlightComputer(self.cfg)
         self.rl_agent = None  # Loaded if available
+        self.k3_agent = None
         self.k2_agent = None
         self.k1_agent = None
 
-        self.mode = "autopilot"  # 'autopilot', 'rl_k2', 'rl_k1', 'manual', 'freefall'
+        self.mode = "k3_champion"  # 'k3_champion', 'k3_runnerup', 'autopilot', 'rl_k2', 'rl_k1', 'manual', 'freefall'
         self.running = True
         self.paused = False
 
@@ -65,7 +66,7 @@ class SimulationSession:
         try:
             from stable_baselines3 import PPO
             self.rl_agent = PPO.load(model_path)
-            print(f"[SimSession] Successfully loaded Kepler-1 model from {model_path}")
+            print(f"[SimSession] Successfully loaded model from {model_path}")
             return True
         except Exception as e:
             print(f"[SimSession] Error loading RL model: {e}")
@@ -95,7 +96,9 @@ class SimulationSession:
         ], dtype=np.float32)
 
         active_agent = None
-        if self.mode in ["rl", "rl_k2"]:
+        if self.mode in ["k3_runnerup", "k3_sq", "k3_neural"]:
+            active_agent = self.k3_agent or self.k2_agent or self.rl_agent
+        elif self.mode in ["rl", "rl_k2"]:
             active_agent = self.k2_agent or self.rl_agent
         elif self.mode == "rl_k1":
             active_agent = self.k1_agent or self.rl_agent
@@ -103,7 +106,7 @@ class SimulationSession:
         if active_agent is not None:
             action, _ = active_agent.predict(obs, deterministic=True)
             a_th, a_tp, a_tr, a_rcs = action
-        elif self.mode == "autopilot":
+        elif self.mode in ["k3_champion", "k3", "autopilot"]:
             action = self.flight_computer.get_action(obs)
             a_th, a_tp, a_tr, a_rcs = action
         elif self.mode == "manual":
@@ -119,12 +122,12 @@ class SimulationSession:
             gz_cmd = 0.0
             rcs_cmd = 0.0
 
-        if self.mode in ["rl", "rl_k2", "rl_k1", "autopilot"] and action is not None:
+        if self.mode in ["k3_champion", "k3_runnerup", "k3", "k3_sq", "autopilot", "rl", "rl_k2", "rl_k1"] and action is not None:
             throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
 
             # Flight Envelope Protection (FEP) for RL policies:
             # If RL policy is descending too fast in terminal approach (z <= 28m), enforce glideslope safety floor
-            if self.mode in ["rl", "rl_k2", "rl_k1"] and s.pos[2] <= 28.0:
+            if self.mode in ["rl", "rl_k2", "rl_k1", "k3_runnerup", "k3_sq"] and s.pos[2] <= 28.0:
                 target_flare_vz = -float(np.sqrt(1.5**2 + 2.0 * 6.5 * max(0.0, s.pos[2])))
                 if s.vel[2] < target_flare_vz:
                     mass = self.cfg.dry_mass + s.fuel_mass
@@ -190,13 +193,28 @@ class SimulationSession:
 
 session = SimulationSession()
 
-# Check for trained models: prefer next-gen kepler_k2.zip, with kepler_k1.zip and kepler_1.zip fallbacks
+# Check for trained models: load Kepler-K3, Kepler-K2, Kepler-K1
 checkpoints_dir = Path(__file__).parent.parent.parent / "checkpoints"
+k3_model_path = checkpoints_dir / "kepler_k3.zip"
+k3_sq_model_path = checkpoints_dir / "kepler_k3_sq.zip"
 k2_model_path = checkpoints_dir / "kepler_k2.zip"
 k1_model_path = checkpoints_dir / "kepler_k1.zip"
 legacy_model_path = checkpoints_dir / "kepler_1.zip"
 
 from stable_baselines3 import PPO
+
+if k3_model_path.exists():
+    try:
+        session.k3_agent = PPO.load(str(k3_model_path))
+        print(f"[SimSession] Successfully loaded Kepler-K3 model from {k3_model_path}")
+    except Exception as e:
+        print(f"[SimSession] Error loading Kepler-K3: {e}")
+elif k3_sq_model_path.exists():
+    try:
+        session.k3_agent = PPO.load(str(k3_sq_model_path))
+        print(f"[SimSession] Successfully loaded Kepler-K3 model from {k3_sq_model_path}")
+    except Exception as e:
+        print(f"[SimSession] Error loading Kepler-K3: {e}")
 
 if k2_model_path.exists():
     try:
@@ -217,8 +235,8 @@ if k1_model_path.exists():
 elif legacy_model_path.exists() and session.rl_agent is None:
     session.load_rl_agent(str(legacy_model_path))
 
-# Set default controller mode to verified Flight Computer (Autonomous FCS)
-session.mode = "autopilot"
+# Set default controller mode to Kepler-K3 (Frontier Champion)
+session.mode = "k3_champion"
 
 @app.get("/")
 def get_index():
