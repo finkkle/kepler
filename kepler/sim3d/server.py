@@ -54,10 +54,19 @@ class SimulationSession:
     def reset(self):
         self.dynamics.wind.reset(base_speed=self.init_wind, direction_deg=self.init_wind_dir)
         self.flight_computer.reset()
+
+        # Sensible initial descent velocity scaled to altitude:
+        # Avoid starting at supersonic overspeed when starting from lower drop altitudes
+        if self.init_alt < 300.0:
+            init_vz = -float(np.sqrt(2.0 * 9.81 * max(5.0, self.init_alt * 0.35)))
+            init_vz = float(np.clip(init_vz, -25.0, -12.0))
+        else:
+            init_vz = -35.0
+
         self.dynamics.reset(
             altitude=self.init_alt,
             lateral_offset=(self.init_x, self.init_y),
-            initial_vel=(0.0, 0.0, -35.0),
+            initial_vel=(0.0, 0.0, init_vz),
             initial_tilt_deg=3.0,
             fuel_mass=self.init_fuel,
         )
@@ -103,26 +112,28 @@ class SimulationSession:
         elif self.mode == "rl_k1":
             active_agent = self.k1_agent or self.rl_agent
 
-        if active_agent is not None:
-            action, _ = active_agent.predict(obs, deterministic=True)
-            a_th, a_tp, a_tr, a_rcs = action
-        elif self.mode in ["k3_champion", "k3", "autopilot"]:
-            action = self.flight_computer.get_action(obs)
-            a_th, a_tp, a_tr, a_rcs = action
+        if self.mode == "freefall":
+            action = None
+            throttle_cmd = 0.0
+            gy_cmd = 0.0
+            gz_cmd = 0.0
+            rcs_cmd = 0.0
         elif self.mode == "manual":
             action = None
             throttle_cmd = self.manual_throttle
             gy_cmd = self.manual_gimbal_y * self.cfg.max_gimbal_angle
             gz_cmd = self.manual_gimbal_z * self.cfg.max_gimbal_angle
             rcs_cmd = self.manual_rcs
-        else:  # freefall
-            action = None
-            throttle_cmd = 0.0
-            gy_cmd = 0.0
-            gz_cmd = 0.0
-            rcs_cmd = 0.0
+        elif active_agent is not None:
+            action, _ = active_agent.predict(obs, deterministic=True)
+            a_th, a_tp, a_tr, a_rcs = action
+        else:
+            # Default to Kepler-K3 Frontier Flight Computer (safe default for k3_champion, autopilot, or any variant)
+            action = self.flight_computer.get_action(obs)
+            a_th, a_tp, a_tr, a_rcs = action
 
-        if self.mode in ["k3_champion", "k3_runnerup", "k3", "k3_sq", "autopilot", "rl", "rl_k2", "rl_k1"] and action is not None:
+        if action is not None and self.mode not in ["manual", "freefall"]:
+            # Action throttle decoding: <= 0.0 is cutoff (coasting), > 0.0 maps into [min_throttle, max_throttle]
             throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
 
             # Flight Envelope Protection (FEP) for RL policies:
@@ -142,9 +153,15 @@ class SimulationSession:
             z_curr = max(0.0, s.pos[2])
 
             max_tilt = np.radians(16.0)
-            near_ground = 1.0 if z_curr > 6.0 else max(0.0, z_curr / 6.0)
-            target_pitch = float(a_tp * max_tilt * near_ground)
-            target_roll = float(a_tr * max_tilt * near_ground)
+            if self.mode in ["k3_champion", "k3", "autopilot"]:
+                # Frontier Flight Computer internally manages glide corridor & terminal crab floor
+                target_pitch = float(a_tp * max_tilt)
+                target_roll = float(a_tr * max_tilt)
+            else:
+                # RL policies: scale near ground with retained 15% crab floor
+                near_ground = 1.0 if z_curr > 6.0 else max(0.15, z_curr / 6.0)
+                target_pitch = float(a_tp * max_tilt * near_ground)
+                target_roll = float(a_tr * max_tilt * near_ground)
 
             kp_att = 4.2
             kd_att = 2.4
@@ -248,6 +265,8 @@ def get_index():
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(ws: WebSocket):
     await ws.accept()
+    # Reset simulation on new connection so client never sees a stale frozen crash
+    session.reset()
     try:
         while True:
             # Check for incoming client commands (non-blocking)

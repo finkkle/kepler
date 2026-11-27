@@ -387,8 +387,7 @@
       ws = new WebSocket(`${protocol}//${window.location.host}/ws/telemetry`);
 
       ws.onopen = () => {
-        const mode = document.getElementById('sel-mode').value;
-        ws.send(JSON.stringify({ action: "set_mode", mode: mode }));
+        resetSimulation();
       };
 
       ws.onmessage = (event) => {
@@ -513,11 +512,11 @@
         badge.innerText = "MISSION FAILED // CRASH IMPACT";
         badge.className = "hud status-badge status-crash";
       } else {
-        if (d.throttle_pct > 30) {
+        if (d.throttle_pct > 5) {
           badge.innerText = "HOVERSLAM BURN ACTIVE";
           badge.className = "hud status-badge status-in-flight";
         } else {
-          badge.innerText = "APPROACHING DRONE SHIP";
+          badge.innerText = "COASTING // SUICIDE BURN APPROACH";
           badge.className = "hud status-badge status-in-flight";
         }
       }
@@ -574,6 +573,7 @@
     function changeMode(mode) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: "set_mode", mode: mode }));
+        resetSimulation();
       }
     }
 
