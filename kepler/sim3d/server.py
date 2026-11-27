@@ -137,12 +137,12 @@ class SimulationSession:
             throttle_cmd = 0.0 if a_th <= 0.0 else (self.cfg.min_throttle + (self.cfg.max_throttle - self.cfg.min_throttle) * float(a_th))
 
             # Flight Envelope Protection (FEP) for RL policies:
-            # If RL policy is descending too fast in terminal approach (z <= 28m), enforce glideslope safety floor
-            if self.mode in ["rl", "rl_k2", "rl_k1", "k3_runnerup", "k3_sq"] and s.pos[2] <= 28.0:
-                target_flare_vz = -float(np.sqrt(1.5**2 + 2.0 * 6.5 * max(0.0, s.pos[2])))
+            # If RL policy is descending too fast in terminal approach (z <= 32m), enforce glideslope safety floor
+            if self.mode in ["rl", "rl_k2", "rl_k1", "k3_runnerup", "k3_sq"] and s.pos[2] <= 32.0:
+                target_flare_vz = -float(np.sqrt(1.4**2 + 2.0 * 6.8 * max(0.0, s.pos[2])))
                 if s.vel[2] < target_flare_vz:
                     mass = self.cfg.dry_mass + s.fuel_mass
-                    a_req = self.cfg.g0 + 6.5 + 4.0 * (target_flare_vz - s.vel[2])
+                    a_req = self.cfg.g0 + 6.8 + 4.5 * (target_flare_vz - s.vel[2])
                     fep_throttle = float(np.clip((mass * a_req) / self.cfg.max_thrust, self.cfg.min_throttle, 1.0))
                     throttle_cmd = max(throttle_cmd, fep_throttle)
 

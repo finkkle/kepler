@@ -22,10 +22,10 @@ class KeplerFlightComputer:
         self,
         booster_cfg: BoosterConfig | None = None,
         thrust_design_frac: float = 0.55,
-        pad_alt: float = 5.0,
+        pad_alt: float = 24.0,
         lat_factor: float = 2.4,
-        flare_alt: float = 5.0,
-        target_vz: float = -1.65,
+        flare_alt: float = 5.5,
+        target_vz: float = -1.22,
         pos_gain: float = 0.32,
     ):
         self.cfg = booster_cfg or BoosterConfig()
@@ -91,10 +91,7 @@ class KeplerFlightComputer:
         # -----------------------------------------------------------------
         # 2. Precision Dual-Loop Lateral Guidance Corridor
         # -----------------------------------------------------------------
-        # Reachability-aware velocity corridor: closes pad offsets rapidly while aloft
-        v_cap_alt = 0.12 * z + 0.35
-        v_cap_dist = 0.28 * dist_xy
-        v_cap = float(np.clip(max(v_cap_alt, v_cap_dist), 0.45, 6.2))
+        v_cap = float(np.clip(0.12 * z + 0.30, 0.40, 5.8))
         target_vx = float(np.clip(-self.pos_gain * x, -v_cap, v_cap))
         target_vy = float(np.clip(-self.pos_gain * y, -v_cap, v_cap))
 
@@ -107,21 +104,21 @@ class KeplerFlightComputer:
             self.int_x *= 0.85
             self.int_y *= 0.85
 
-        kp_v = 2.4
+        kp_v = 2.3
         ki_p = 0.12
-        cmd_ax = float(np.clip(kp_v * (target_vx - vx) + ki_p * self.int_x - 0.85 * a_wind_x - 0.03 * wx_wind, -4.5, 4.5))
-        cmd_ay = float(np.clip(kp_v * (target_vy - vy) + ki_p * self.int_y - 0.85 * a_wind_y - 0.03 * wy_wind, -4.5, 4.5))
+        cmd_ax = float(np.clip(kp_v * (target_vx - vx) + ki_p * self.int_x - 0.85 * a_wind_x - 0.03 * wx_wind, -3.5, 3.5))
+        cmd_ay = float(np.clip(kp_v * (target_vy - vy) + ki_p * self.int_y - 0.85 * a_wind_y - 0.03 * wy_wind, -3.5, 3.5))
 
         # Dynamic bank limit with retained crab authority floor down to touchdown
         if z > 35.0:
-            max_bank = 0.60
+            max_bank = 0.50
         elif z > self.flare_alt:
-            max_bank = float(0.40 + 0.20 * ((z - self.flare_alt) / (35.0 - self.flare_alt)))
+            max_bank = float(0.35 + 0.15 * ((z - self.flare_alt) / (35.0 - self.flare_alt)))
         else:
             # Maintain active crab authority down to touchdown to counter surface crossflow
             w_norm = min(1.0, w_speed / 10.0)
             crab_floor = float(0.08 + 0.15 * w_norm)
-            max_bank = float(max(crab_floor, 0.40 * (z / self.flare_alt)))
+            max_bank = float(max(crab_floor, 0.35 * (z / self.flare_alt)))
 
         a_tp = float(np.clip(cmd_ax / 5.2, -max_bank, max_bank))
         a_tr = float(np.clip(-cmd_ay / 5.2, -max_bank, max_bank))
@@ -144,10 +141,6 @@ class KeplerFlightComputer:
         if z <= 0.05:
             return np.array([-0.50, 0.0, 0.0, rcs_roll], dtype=np.float32)
 
-        # Anti-float energy dump: if descending too slowly or climbing aloft, cutoff engine
-        if z <= self.flare_alt and vz > -0.60:
-            return np.array([-0.50, a_tp, a_tr, rcs_roll], dtype=np.float32)
-
         # -----------------------------------------------------------------
         # 5. Deceleration Glideslope & Decoupled TVC Thrust Allocation
         # -----------------------------------------------------------------
@@ -160,6 +153,7 @@ class KeplerFlightComputer:
             a_net_blend = a_net
         else:
             v_target = self.target_vz
+            # Blend deceleration overpressure to zero to prevent hovering
             a_net_blend = a_net * (z / self.flare_alt)
 
         vz_error = v_target - vz
@@ -168,12 +162,11 @@ class KeplerFlightComputer:
         # Decouple vertical braking from TVC bank angle (cos(tilt) scaling)
         tilt_cmd_rad = np.hypot(a_tp, a_tr) * np.radians(16.0)
         cos_tilt = float(np.cos(tilt_cmd_rad))
-        cos_tilt = max(0.90, cos_tilt)
+        cos_tilt = max(0.92, cos_tilt)
         desired_thrust_n = (mass * desired_accel_z) / cos_tilt
 
-        # Continuous single-burn hoverslam: throttle never drops below min_throttle during burn.
-        # Enforce throttle_norm >= 0.02 strictly when ignited so engine never prematurely cuts off before touchdown!
+        # Continuous single-burn hoverslam: throttle never drops below min_throttle during burn
         throttle = float(np.clip(desired_thrust_n / self.cfg.max_thrust, self.cfg.min_throttle, 1.0))
-        throttle_norm = float(np.clip((throttle - self.cfg.min_throttle) / (1.0 - self.cfg.min_throttle), 0.02, 1.0))
+        throttle_norm = float((throttle - self.cfg.min_throttle) / (1.0 - self.cfg.min_throttle))
 
         return np.array([throttle_norm, a_tp, a_tr, rcs_roll], dtype=np.float32)
